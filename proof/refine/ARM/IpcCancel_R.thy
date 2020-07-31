@@ -1005,17 +1005,9 @@ lemma (in delete_one_conc_pre) cancelIPC_tcb_at_runnable':
                   | wpc | simp add: o_def if_fun_split)+
   done *)
 
-crunch ksCurDomain[wp]: cancelSignal "\<lambda>s. P (ksCurDomain s)"
-  (wp: crunch_wps)
-
-lemma (in delete_one_conc_pre) cancelIPC_ksCurDomain[wp]:
-  "\<lbrace>\<lambda>s. P (ksCurDomain s)\<rbrace> cancelIPC t \<lbrace>\<lambda>_ s. P (ksCurDomain s)\<rbrace>"
-  apply (simp add: cancelIPC_def Let_def)
-  apply (wp hoare_vcg_conj_lift delete_one_ksCurDomain
-       | wpc
-       | rule hoare_drop_imps
-       | simp add: o_def if_fun_split)+
-  sorry
+crunches cancelIPC
+  for ksCurDomain[wp]: "\<lambda>s. P (ksCurDomain s)"
+  (wp: crunch_wps simp: crunch_simps pred_tcb_at'_def)
 
 (* FIXME move *)
 lemma setBoundNotification_not_ntfn:
@@ -1044,15 +1036,34 @@ lemma cancelSignal_tcb_obj_at':
   apply (wpsimp wp: setThreadState_not_st getNotification_wp)
   done
 
-lemma (in delete_one_conc_pre) cancelIPC_tcbDomain_obj_at':
+crunches replyRemoveTCB, cancelSignal, getBlockingObject
+  for obj_at'_only_st_qd_ft: "\<lambda>s. P (obj_at' (Q :: tcb \<Rightarrow> bool) t s)"
+  (simp: crunch_simps pred_tcb_at'_def wp: crunch_wps)
+
+(* FIXME: Proved outside of `crunch` because without the `[where P=P]` constraint, the
+   postcondition unifies with the precondition in a wonderfully exponential way. VER-1337 *)
+lemma cancelIPC_obj_at'_only_st_qd_ft:
+  "\<lbrace>\<lambda>s. P (obj_at' Q t' s) \<and>
+        (\<forall>upd tcb. Q (tcbState_update upd tcb) = Q tcb) \<and>
+        (\<forall>upd tcb. Q (tcbQueued_update upd tcb) = Q tcb) \<and>
+        (\<forall>upd tcb. Q (tcbFault_update upd tcb) = Q tcb)\<rbrace>
+   cancelIPC t
+   \<lbrace>\<lambda>_ s. P (obj_at' Q t' s)\<rbrace>"
+  unfolding cancelIPC_def Let_def
+  apply (wpsimp wp: scheduleTCB_obj_at'_only_st_qd_ft[where P=P]
+                    threadSet_obj_at'_only_st_qd_ft[where P=P]
+                    setThreadState_obj_at'_only_st_qd_ft[where P=P]
+                    replyUnlink_obj_at'_only_st_qd_ft[where P=P]
+                    getBlockingObject_obj_at'_only_st_qd_ft[where P=P]
+                    replyRemoveTCB_obj_at'_only_st_qd_ft[where P=P]
+                    cancelSignal_obj_at'_only_st_qd_ft[where P=P]
+                    hoare_drop_imp)
+  done
+
+lemma cancelIPC_tcbDomain_obj_at':
   "\<lbrace>obj_at' (\<lambda>tcb. P (tcbDomain tcb)) t'\<rbrace> cancelIPC t \<lbrace>\<lambda>_. obj_at' (\<lambda>tcb. P (tcbDomain tcb)) t'\<rbrace>"
-  apply (simp add: cancelIPC_def Let_def)
-  apply (wp hoare_vcg_conj_lift
-            setThreadState_not_st delete_one_tcbDomain_obj_at' cancelSignal_tcb_obj_at'
-       | wpc
-       | rule hoare_drop_imps
-       | simp add: o_def if_fun_split)+
-  sorry
+  apply (wpsimp wp: cancelIPC_obj_at'_only_st_qd_ft)
+  done
 
 lemma (in delete_one_conc_pre) cancelIPC_tcb_in_cur_domain':
   "\<lbrace>tcb_in_cur_domain' t'\<rbrace> cancelIPC t \<lbrace>\<lambda>_. tcb_in_cur_domain' t'\<rbrace>"
