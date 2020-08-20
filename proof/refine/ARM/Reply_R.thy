@@ -8,6 +8,11 @@ theory Reply_R
 imports TcbAcc_R
 begin
 
+defs replyUnlink_assertion_def:
+  "replyUnlink_assertion
+    \<equiv> \<lambda>replyPtr state s. state = BlockedOnReply (Some replyPtr)
+                          \<or> (\<exists>ep d. state = BlockedOnReceive ep d (Some replyPtr))"
+
 crunches setReplyTCB
   for pred_tcb_at'[wp]: "\<lambda>s. P (pred_tcb_at' proj test t s)"
   and tcb_at'[wp]: "\<lambda>s. P (tcb_at' t s)"
