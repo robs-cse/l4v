@@ -53,6 +53,37 @@ abbreviation (input)
 where
   "set_obj' ptr obj s \<equiv> set_ko' ptr (injectKO obj) s"
 
+(* FIXME RT: bikeshedding *)
+(* `injectKO` here gets simplified into other constants, hence the `ks_reply_at'` abbreviation
+   below. *)
+(* Should these be definitions? *)
+(* I have no idea where I got the `ks_` prefix from, other than maybe the `ks` in `ksPSpace`,
+   which would be super silly. *)
+abbreviation ks_obj_at' :: "('a :: pspace_storable \<Rightarrow> bool) \<Rightarrow> machine_word \<Rightarrow> kernel_state \<Rightarrow> bool"
+  where
+  "ks_obj_at' P p s \<equiv> (\<exists>ko. ksPSpace s p = Some (injectKO ko) \<and> P ko)"
+
+abbreviation ks_ko_wp_at' :: "(kernel_object \<Rightarrow> bool) \<Rightarrow> machine_word \<Rightarrow> kernel_state \<Rightarrow> bool"
+  where
+  "ks_ko_wp_at' P p s \<equiv> (\<exists>ko. ksPSpace s p = Some ko \<and> P ko)"
+
+abbreviation ks_ko_at' :: "('a :: pspace_storable) \<Rightarrow> machine_word \<Rightarrow> kernel_state \<Rightarrow> bool" where
+  "ks_ko_at' ko p s \<equiv> ksPSpace s p = Some (injectKO ko)"
+
+(* If we have this, should we have the others? *)
+abbreviation ks_reply_at' :: "reply \<Rightarrow> machine_word \<Rightarrow> kernel_state \<Rightarrow> bool" where
+  "ks_reply_at' r p s \<equiv> ksPSpace s p = Some (KOReply r)"
+
+lemma ks_obj_at'_to_obj_at':
+  "\<lbrakk>ks_obj_at' P p s; pspace_aligned' s; pspace_distinct' s\<rbrakk> \<Longrightarrow> obj_at' P p s"
+  apply (fastforce simp: pspace_alignedD' pspace_distinctD' obj_at'_def projectKO_eq project_inject)
+  done
+
+lemma obj_at'_to_ks_obj_at':
+  "obj_at' P p s \<Longrightarrow> ks_obj_at' P p s"
+  apply (fastforce simp: obj_at'_def projectKO_eq project_inject)
+  done
+
 context begin interpretation Arch . (*FIXME: arch_split*)
 
 lemma obj_at_getObject:
@@ -364,6 +395,14 @@ lemma non_sc_same_typ_at'_objBits_always_the_same:
 
 lemmas non_sc_same_typ_at'_ko_wp_at'_set_ko'_iff =
   same_size_ko_wp_at'_set_ko'_iff[OF non_sc_same_typ_at'_objBits_always_the_same]
+
+lemma obj_at'_strip:
+  fixes P Q :: "'a :: pspace_storable \<Rightarrow> bool"
+  assumes "obj_at' P p s"
+  shows "obj_at' Q p s = (\<forall>ko ko'. ksPSpace s p = Some ko \<and> projectKO_opt ko = Some ko' \<longrightarrow> Q ko')"
+  using assms
+  apply (clarsimp simp: obj_at'_def projectKO_eq)
+  done
 
 (* Worth adding other typ_at's? *)
 lemma typ_at'_ksPSpace_exI:
@@ -2018,6 +2057,11 @@ lemma it[wp]: "\<And>P. f \<lbrace>\<lambda>s. P (ksIdleThread s)\<rbrace>"
   unfolding valid_def using pspace
   by (all \<open>fastforce\<close>)
 
+lemma sch_act_simple[wp]:
+  "f \<lbrace>\<lambda>s. P (sch_act_simple s)\<rbrace>"
+  apply (wpsimp wp: ksSchedulerAction simp: sch_act_simple_def)
+  done
+
 end
 
 locale simple_ko' =
@@ -2152,11 +2196,8 @@ lemma setObject_obj_at'_strongest:
   shows "\<lbrace>\<lambda>s. obj_at' (\<lambda>_:: 'a. True) ptr s
               \<and> obj_at' (\<lambda>old_obj :: 'a. objBits old_obj = objBits obj) ptr s
               \<longrightarrow> (let s' = set_obj' ptr obj s in
-                    Q (obj_at' (\<lambda>old_obj.
-                         if ptr = ptr' s'
-                         then P s' obj
-                         else P s' old_obj)
-                        (ptr' s') s))\<rbrace>
+                    Q ((ptr = ptr' s' \<longrightarrow> P s' obj)
+                       \<and> (ptr \<noteq> ptr' s' \<longrightarrow> obj_at' (P s') (ptr' s') s)))\<rbrace>
          setObject ptr obj
          \<lbrace>\<lambda>rv s. Q (obj_at' (P s) (ptr' s) s)\<rbrace>"
   apply (rule setObject_pre)
@@ -2215,6 +2256,7 @@ lemma setObject_preserves_some_obj_at':
    setObject p (ko :: 'a)
    \<lbrace>\<lambda>_ s. P (obj_at' (\<lambda>_ :: 'a. True) p' s)\<rbrace>"
   apply (wpsimp wp: setObject_obj_at'_strongest)
+  apply (case_tac "p = p'"; clarsimp)
   done
 
 lemmas set_preserves_some_obj_at' = setObject_preserves_some_obj_at'[folded f_def]
@@ -2254,6 +2296,28 @@ lemmas get_ko_at' = getObject_ko_at'[folded g_def]
 
 lemmas ko_wp_at = setObject_ko_wp_at[where 'a='a, folded f_def,
                                      simplified default_update objBits, simplified]
+
+lemma setObject_valid_reply':
+  "setObject p (ko :: 'a) \<lbrace>valid_reply' reply'\<rbrace>"
+  unfolding valid_reply'_def valid_bound_obj'_def
+  apply (wpsimp split: option.splits
+                   wp: hoare_vcg_imp_lift' hoare_vcg_all_lift)
+  apply fastforce
+  done
+
+lemmas set_valid_reply' = setObject_valid_reply'[folded f_def]
+
+lemma setObject_ko_at':
+  "\<lbrace>\<lambda>s. obj_at' (\<lambda>_ :: 'a. True) p s \<longrightarrow>
+          (p = p' \<longrightarrow> P (ko = ko')) \<and>
+          (p \<noteq> p' \<longrightarrow> P (ko_at' ko' p' s))\<rbrace>
+   setObject p (ko :: 'a)
+   \<lbrace>\<lambda>_ s. P (ko_at' (ko' :: 'a) p' s)\<rbrace>"
+  apply (wpsimp wp: obj_at'_strongest[unfolded f_def])
+  apply (case_tac "p = p'"; clarsimp simp: obj_at'_def)
+  done
+
+lemmas set_ko_at' = setObject_ko_at'[folded f_def]
 
 end
 
@@ -2368,6 +2432,12 @@ lemma ct_not_inQ[wp]:
 lemma ct_idle_or_in_cur_domain'[wp]:
   "f p v \<lbrace> ct_idle_or_in_cur_domain' \<rbrace>"
   by (rule ct_idle_or_in_cur_domain'_lift; wp)
+
+lemma untyped_ranges_zero'[wp]:
+  "f p ko \<lbrace>untyped_ranges_zero'\<rbrace>"
+  unfolding cteCaps_of_def o_def
+  apply (wpsimp wp: untyped_ranges_zero_lift)
+  done
 
 end
 
@@ -2530,6 +2600,25 @@ lemma setReply_state_refs_of'[wp]:
    setReply p reply
    \<lbrace>\<lambda>rv s. P (state_refs_of' s)\<rbrace>"
   by (wp set_reply'.state_refs_of') (simp flip: fun_upd_def)
+
+lemma setReply_replyNexts_replyPrevs[wp]:
+  "\<lbrace>\<lambda>s. P ((replyNexts_of s)(rptr := replyNext_of reply))
+          ((replyPrevs_of s)(rptr := replyPrev reply))\<rbrace>
+   setReply rptr reply
+   \<lbrace>\<lambda>_ s. P (replyNexts_of s) (replyPrevs_of s)\<rbrace>"
+  apply (wpsimp simp: setReply_def updateObject_default_def setObject_def split_def)
+  apply (erule rsubst2[where P=P])
+   apply (clarsimp simp: ext opt_map_def list_refs_of_reply'_def map_set_def projectKO_opt_reply
+                  split: option.splits)+
+  done
+
+lemma updateReply_wp_all:
+  "\<lbrace>\<lambda>s. \<forall>ko. ko_at' ko rptr s \<longrightarrow> P (set_obj' rptr (upd ko) s)\<rbrace>
+   updateReply rptr upd
+   \<lbrace>\<lambda>_. P\<rbrace>"
+  unfolding updateReply_def
+  apply (wpsimp wp: set_reply'.set_wp)
+  done
 
 lemma setSchedContext_iflive'[wp]:
   "\<lbrace>if_live_then_nonz_cap' and (\<lambda>s. live_sc' sc \<longrightarrow> ex_nonz_cap_to' p s)\<rbrace>
