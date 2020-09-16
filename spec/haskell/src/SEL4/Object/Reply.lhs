@@ -8,7 +8,7 @@ This module specifies the behavior of reply objects.
 
 > module SEL4.Object.Reply (
 >         replyClear, replyRemove, replyPush, replyUnlink, getReply, setReply, getReplyTCB,
->         replyRemoveTCB, setReplyTCB
+>         replyRemoveTCB, setReplyTCB, updateReply
 >     ) where
 
 \begin{impdetails}
@@ -27,6 +27,12 @@ This module specifies the behavior of reply objects.
 > import Data.Maybe(fromJust)
 
 \end{impdetails}
+
+
+> updateReply :: PPtr Reply -> (Reply -> Reply) -> Kernel ()
+> updateReply replyPtr upd = do
+>     reply <- getReply replyPtr
+>     setReply replyPtr (upd reply)
 
 > replyPush :: PPtr TCB -> PPtr TCB -> PPtr Reply -> Bool -> Kernel ()
 > replyPush callerPtr calleePtr replyPtr canDonate = do
@@ -151,14 +157,12 @@ This module specifies the behavior of reply objects.
 >            else do
 >               nextReplyPtr <- return $ theReplyNextPtr nextReplyPtrOpt
 >               assert (rptr /= nextReplyPtr) "replyRemoveTCB: reply lists must be distinct"
->               nextReply <- getReply nextReplyPtr
->               setReply nextReplyPtr (nextReply { replyPrev = Nothing })
+>               updateReply nextReplyPtr (\reply -> reply { replyPrev = Nothing })
 
 >     when (prevReplyPtrOpt /= Nothing) $ do
 >         prevReplyPtr <- return $ fromJust prevReplyPtrOpt
 >         assert (rptr /= prevReplyPtr) "replyRemoveTCB: reply lists must be distinct"
->         prevReply <- getReply prevReplyPtr
->         setReply prevReplyPtr (prevReply { replyNext = Nothing })
+>         updateReply prevReplyPtr (\reply -> reply { replyNext = Nothing })
 
 >     cleanReply rptr
 >     replyUnlink rptr tptr
@@ -181,9 +185,8 @@ on the thread state of the replyTCB of the replyPtr
 > replyUnlink_assertion _ _ _ = True
 
 > cleanReply :: PPtr Reply -> Kernel ()
-> cleanReply replyPtr = do
->     reply <- getReply replyPtr
->     setReply replyPtr (reply { replyPrev = Nothing, replyNext = Nothing })
+> cleanReply replyPtr = updateReply replyPtr (\reply -> reply { replyPrev = Nothing,
+>                                                               replyNext = Nothing })
 
 > getReply :: PPtr Reply -> Kernel Reply
 > getReply rptr = getObject rptr
@@ -195,9 +198,7 @@ on the thread state of the replyTCB of the replyPtr
 > getReplyTCB r = liftM replyTCB (getReply r)
 
 > setReplyTCB :: Maybe (PPtr TCB) -> PPtr Reply -> Kernel ()
-> setReplyTCB tptrOpt rptr = do
->     r <- getReply rptr
->     setReply rptr (r { replyTCB = tptrOpt})
+> setReplyTCB tptrOpt rptr = updateReply rptr (\reply -> reply { replyTCB = tptrOpt })
 
 > replyClear :: PPtr Reply -> PPtr TCB -> Kernel ()
 > replyClear rptr tptr = do
