@@ -2654,11 +2654,25 @@ lemma typ_at_lift_page_table_at'_strong:
          | fastforce)+
   done
 
+lemma typ_at_lift_valid_tcb_state'_strong:
+  assumes ep: "\<And>p. f \<lbrace>\<lambda>s. P (typ_at' EndpointT p s)\<rbrace>"
+      and reply: "\<And>p. f \<lbrace>\<lambda>s. P (typ_at' ReplyT p s)\<rbrace>"
+      and ntfn: "\<And>p. f \<lbrace>\<lambda>s. P (typ_at' NotificationT p s)\<rbrace>"
+  shows "f \<lbrace>\<lambda>s. P (valid_tcb_state' st s)\<rbrace>"
+  unfolding valid_tcb_state'_def valid_bound_reply'_def
+  apply (case_tac st
+         ; clarsimp split: option.splits
+         , wpsimp wp: hoare_vcg_imp_lift' hoare_vcg_all_lift hoare_vcg_conj_lift_N[where N=P]
+                           typ_at_lift_ep'_strong[OF ep] typ_at_lift_reply'_strong[OF reply]
+                           typ_at_lift_ntfn'_strong[OF ntfn])
+  done
+
 lemmas typ_at_lifts_strong =
   typ_at_lift_tcb'_strong typ_at_lift_ep'_strong
   typ_at_lift_ntfn'_strong typ_at_lift_cte'_strong
   typ_at_lift_reply'_strong typ_at_lift_sc'_strong
   typ_at_lift_page_directory_at'_strong
+  typ_at_lift_valid_tcb_state'_strong
   typ_at_lift_page_table_at'_strong
 
 lemma ko_wp_typ_at':
@@ -2785,9 +2799,13 @@ local
   val strong_thms = @{thms typ_at_lifts_strong[no_vars]};
   fun abstract_P term = Logic.all (Free ("P", @{typ "bool \<Rightarrow> bool"})) term
   fun abstract thm =
-    @{const Pure.imp} $
-      abstract_P (hd (Thm.prems_of thm)) $
-      Thm.concl_of thm
+    let
+      val prems = List.map abstract_P (Thm.prems_of thm);
+      fun imp [] = Thm.concl_of thm
+        | imp (p :: pms) = @{const Pure.imp} $ p $ imp pms
+    in
+      imp prems
+    end
 in
   val typ_at_lifts_internal_goals = List.map abstract strong_thms
 end

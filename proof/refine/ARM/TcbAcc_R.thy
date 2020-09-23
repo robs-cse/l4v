@@ -1473,7 +1473,6 @@ lemma threadSet_invs_trivialT:
   assumes b: "\<forall>tcb. tcbMCP tcb \<le> maxPriority \<longrightarrow> tcbMCP (F tcb) \<le> maxPriority"
   shows
   "\<lbrace>\<lambda>s. invs' s \<and>
-       tcb_at' t s \<and>
        (\<forall>d p. (\<exists>tcb. inQ d p tcb \<and> \<not> inQ d p (F tcb)) \<longrightarrow> t \<notin> set (ksReadyQueues s (d, p))) \<and>
        (\<forall>ko d p. ko_at' ko t s \<and> inQ d p (F ko) \<and> \<not> inQ d p ko \<longrightarrow> t \<in> set (ksReadyQueues s (d, p))) \<and>
        ((\<exists>tcb. tcbInReleaseQueue tcb \<and> \<not> tcbInReleaseQueue (F tcb)) \<longrightarrow> t \<notin> set (ksReleaseQueue s)) \<and>
@@ -2928,6 +2927,35 @@ lemma isSchedulable_sp:
   "\<lbrace>P\<rbrace> isSchedulable tcbPtr \<lbrace>\<lambda>rv. (\<lambda>s. rv = isSchedulable_bool tcbPtr s) and P\<rbrace>"
   by (wpsimp wp: isSchedulable_wp)
 
+
+lemma rescheduleRequired_sch_act'[wp]:
+  "\<lbrace>\<top>\<rbrace>
+   rescheduleRequired
+   \<lbrace>\<lambda>rv s. sch_act_wf (ksSchedulerAction s) s\<rbrace>"
+  by (wpsimp simp: rescheduleRequired_def wp: isSchedulable_wp)
+
+lemma rescheduleRequired_weak_sch_act_wf[wp]:
+  "\<lbrace>\<top>\<rbrace>
+   rescheduleRequired
+   \<lbrace>\<lambda>rv s. weak_sch_act_wf (ksSchedulerAction s) s\<rbrace>"
+  apply (simp add: rescheduleRequired_def setSchedulerAction_def)
+  apply (wp hoare_post_taut | simp add: weak_sch_act_wf_def)+
+  done
+
+lemma sts_weak_sch_act_wf[wp]:
+  "\<lbrace>\<lambda>s. weak_sch_act_wf (ksSchedulerAction s) s
+        \<and> (ksSchedulerAction s = SwitchToThread t \<longrightarrow> runnable' st)\<rbrace>
+   setThreadState st t
+   \<lbrace>\<lambda>_ s. weak_sch_act_wf (ksSchedulerAction s) s\<rbrace>"
+  unfolding setThreadState_def scheduleTCB_def
+  apply (wpsimp wp: hoare_vcg_if_lift2 hoare_vcg_imp_lift hoare_vcg_all_lift
+                    threadSet_pred_tcb_at_state threadSet_tcbDomain_triv
+                    isSchedulable_inv
+                    hoare_pre_cont[where a="isSchedulable x" and P="\<lambda>rv _. rv" for x]
+                    hoare_pre_cont[where a="isSchedulable x" and P="\<lambda>rv _. \<not>rv" for x]
+              simp: weak_sch_act_wf_def)
+  done
+
 lemma threadSet_isSchedulable_bool_nochange:
   "\<lbrace>\<lambda>s. runnable' st \<and> isSchedulable_bool t s\<rbrace>
    threadSet (tcbState_update (\<lambda>_. st)) t
@@ -2949,12 +2977,6 @@ lemma threadSet_isSchedulable_bool:
   apply (wpsimp wp: setObject_tcb_wp simp: pred_map_def obj_at'_def opt_map_def projectKOs)
   apply (fastforce simp: pred_map_def tcb_of'_def projectKOs isScActive_def)
   done
-
-lemma rescheduleRequired_sch_act'[wp]:
-  "\<lbrace>\<top>\<rbrace>
-      rescheduleRequired
-   \<lbrace>\<lambda>rv s. sch_act_wf (ksSchedulerAction s) s\<rbrace>"
-  by (wpsimp simp: rescheduleRequired_def wp: isSchedulable_wp)
 
 lemma setObject_queued_pred_tcb_at'[wp]:
   "\<lbrace>pred_tcb_at' proj P t' and obj_at' ((=) tcb) t\<rbrace>
@@ -3036,6 +3058,7 @@ lemma sts_sch_act':
   apply (wpsimp wp: threadSet_pred_tcb_at_state threadSet_sch_act_wf hoare_vcg_disj_lift)
   done
 
+(* FIXME: sts_sch_act' (above) is stronger, and should be the wp rule. VER-1366 *)
 lemma sts_sch_act[wp]:
   "\<lbrace>\<lambda>s. (\<not> runnable' st \<longrightarrow> sch_act_simple s) \<and> sch_act_wf (ksSchedulerAction s) s\<rbrace>
      setThreadState st t
@@ -3077,14 +3100,6 @@ lemma sch_act_simple_lift:
 lemma rescheduleRequired_sch_act_simple_True[wp]:
   "\<lbrace>\<top>\<rbrace> rescheduleRequired \<lbrace>\<lambda>rv. sch_act_simple\<rbrace>"
   by (wpsimp simp: rescheduleRequired_def)
-
-lemma valid_tcb_state_lift:
-  assumes typ_at: "\<And>P T p. f \<lbrace>\<lambda>s. P (typ_at' T p s)\<rbrace>"
-  shows "f \<lbrace>valid_tcb_state' st\<rbrace>"
-  unfolding valid_tcb_state'_def
-  apply (wpsimp wp: typ_at_lifts[OF typ_at] hoare_vcg_all_lift hoare_vcg_imp_lift'
-             split: thread_state.splits)
-  done
 
 crunches scheduleTCB
   for sch_act_simple[wp]: sch_act_simple
@@ -5511,16 +5526,6 @@ lemma tcbSchedEnqueue_obj_at':
   apply (prop_tac "tcbQueued_update (\<lambda>_. True) ko = ko")
    apply (case_tac ko; clarsimp)
   apply simp
-  done
-
-lemma setThreadState_not_runnable_valid_queues:
-  "\<lbrace>valid_queues and st_tcb_at' (Not o runnable') t\<rbrace>
-   setThreadState st t
-   \<lbrace>\<lambda>_. valid_queues\<rbrace>"
-  unfolding setThreadState_def
-  apply (wpsimp wp: threadSet_valid_queues scheduleTCB_valid_queues)
-  apply (clarsimp simp: sch_act_simple_def Invariants_H.valid_queues_def inQ_def pred_tcb_at'_def
-                        obj_at'_def)
   done
 
 end

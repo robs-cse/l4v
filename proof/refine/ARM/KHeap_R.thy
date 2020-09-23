@@ -2510,6 +2510,9 @@ interpretation threadSet: pspace_only' "threadSet f p"
   apply (fastforce dest: set_tcb'.pspace)
   done
 
+lemmas getReplyTCB_wp =
+  set_reply'.get_wp[THEN liftM_wp, where f=replyTCB, folded getReplyTCB_def]
+
 context begin interpretation Arch . (*FIXME: arch_split*)
 
 (* aliases for compatibility with master *)

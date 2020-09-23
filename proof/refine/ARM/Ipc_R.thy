@@ -2750,10 +2750,10 @@ proof -
           apply wp
          prefer 7 \<comment> \<open>state = Restart\<close>
          apply wp
+  sorry (*
         apply (wp)+
            apply (wp hoare_convert_imp)[1]
           apply (wpc, wp+)
-  sorry (*
         apply (rule_tac Q="\<lambda>_. ?PRE t'" in hoare_post_imp, clarsimp)
         apply (wp cdo)+
          apply (rule_tac Q="\<lambda>_. ?PRE t'" in hoare_post_imp, clarsimp)

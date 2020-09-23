@@ -2760,19 +2760,14 @@ lemma capDeleteOne_bound_tcb_at':
   apply (case_tac "cteCap cte", simp_all)
   done
 
-crunches getBlockingObject
-  for inv[wp]: P
+lemma pred_tcb_at_True_tcb_at':
+  "pred_tcb_at' field (\<lambda>_. True) p s = tcb_at' p s"
+  apply (clarsimp simp: pred_tcb_at'_def)
+  done
 
-lemma replyRemoveTCB_bound_tcb_at'[wp]:
-  "replyRemoveTCB t \<lbrace>bound_tcb_at' P tptr\<rbrace>"
-  unfolding replyRemoveTCB_def
-  by (wpsimp wp: hoare_drop_imp hoare_vcg_all_lift threadSet_pred_tcb_no_state)
-
-lemma cancelIPC_bound_tcb_at'[wp]:
-  "\<lbrace>bound_tcb_at' P tptr\<rbrace> cancelIPC t \<lbrace>\<lambda>rv. bound_tcb_at' P tptr\<rbrace>"
-  unfolding cancelIPC_def
-  by (wpsimp wp: sts_bound_tcb_at' hoare_drop_imp hoare_vcg_all_lift threadSet_pred_tcb_no_state
-           simp: Let_def)
+crunches cancelIPC
+  for bound_tcb_at'[wp]: "bound_tcb_at' P tptr"
+  (wp: crunch_wps threadSet_pred_tcb_no_state simp: crunch_simps pred_tcb_at_True_tcb_at')
 
 lemma schedContextCancelYieldTo_bound_tcb_at[wp]:
   "schedContextCancelYieldTo t \<lbrace> bound_tcb_at' P tptr \<rbrace>"
@@ -3247,7 +3242,7 @@ crunches setThreadState
 
 lemma replyUnlink_valid_reply'[wp]:
   "replyUnlink replyPtr tcbPtr \<lbrace>valid_reply' reply\<rbrace>"
-  apply (clarsimp simp: replyUnlink_def getReplyTCB_def liftM_def setReplyTCB_def)
+  apply (clarsimp simp: replyUnlink_def getReplyTCB_def liftM_def setReplyTCB_def updateReply_def)
   apply (wpsimp wp: set_reply'.set_wp gts_wp')
   by (auto simp: valid_reply'_def obj_at'_def projectKOs objBitsKO_def valid_bound_obj'_def
           split: option.splits)

@@ -95,15 +95,6 @@ lemma replyRemoveTCB_st_tcb_at'_sym_ref:
   apply (clarsimp simp: obj_at'_def pred_tcb_at'_def)
   done
 
-lemma getReplyTCB_wp:
-  "\<lbrace>\<lambda>s. reply_at' rptr s \<longrightarrow> obj_at' (\<lambda>reply. P (replyTCB reply) s) rptr s\<rbrace>
-   getReplyTCB rptr
-   \<lbrace>P\<rbrace>"
-  unfolding getReplyTCB_def
-  apply (wpsimp)
-  apply (clarsimp simp: obj_at'_def)
-  done
-
 crunches setReplyTCB
   for ksReadyQueues[wp]: "\<lambda>s. P (ksReadyQueues s)"
   and ksSchedulerAction[wp]: "\<lambda>s. P (ksSchedulerAction s)"
@@ -140,16 +131,6 @@ lemma replyUnlink_valid_pspace'[wp]:
   apply (clarsimp simp: valid_reply'_def)
   done
 
-lemma replyUnlink_not_runnable_valid_queues:
-  "\<lbrace>\<lambda>s. valid_queues s \<and> st_tcb_at' (Not o runnable') tptr s\<rbrace>
-   replyUnlink rptr tptr
-   \<lbrace>\<lambda>_. valid_queues\<rbrace>"
-  unfolding replyUnlink_def replyUnlink_assertion_def
-  apply (wpsimp wp: setThreadState_not_runnable_valid_queues hoare_vcg_imp_lift'
-                    getReplyTCB_inv getReplyTCB_wp)
-  apply (clarsimp simp: obj_at'_def o_def pred_tcb_at'_def)
-  done
-
 lemma replyUnlink_idle'[wp]:
   "\<lbrace>valid_idle' and valid_pspace' and (\<lambda>s. tptr \<noteq> ksIdleThread s)\<rbrace>
    replyUnlink rptr tptr
@@ -165,8 +146,7 @@ lemma replyUnlink_idle'[wp]:
 lemma replyUnlink_valid_queues[wp]:
   "replyUnlink rptr tptr \<lbrace>valid_queues\<rbrace>"
   unfolding replyUnlink_def replyUnlink_assertion_def getReplyTCB_def
-  apply (wpsimp wp: setThreadState_not_runnable_valid_queues gts_wp' hoare_vcg_imp_lift')
-  apply (clarsimp simp: pred_tcb_at'_def obj_at'_def)
+  apply (wpsimp wp: setThreadState_valid_queues' gts_wp' hoare_vcg_imp_lift')
   done
 
 lemma setReplyTCB_replyNexts_replyPrevs[wp]:
@@ -189,6 +169,30 @@ lemma cleanReply_replyNexts_replyPrevs[wp]:
    apply (clarsimp simp: ext opt_map_def list_refs_of_reply'_def obj_at'_def projectKO_eq
                          map_set_def projectKO_opt_reply ARM_H.fromPPtr_def
                   split: option.splits)+
+  done
+
+lemma updateReply_valid_objs'_preserved_strong:
+  "\<lbrace>valid_objs' and (\<lambda>s. \<forall>r. valid_reply' r s \<longrightarrow> valid_reply' (upd r) s)\<rbrace>
+   updateReply rptr upd
+   \<lbrace>\<lambda>_. valid_objs'\<rbrace>"
+  unfolding updateReply_def
+  apply wpsimp
+  apply (frule(1) reply_ko_at_valid_objs_valid_reply')
+  apply clarsimp
+  done
+
+lemma updateReply_valid_objs'_preserved:
+  "\<lbrace>valid_objs' and K (\<forall>r s. valid_reply' r s \<longrightarrow> valid_reply' (upd r) s)\<rbrace>
+   updateReply rptr upd
+   \<lbrace>\<lambda>_. valid_objs'\<rbrace>"
+  apply (wpsimp wp: updateReply_valid_objs'_preserved_strong)
+  done
+
+lemma cleanReply_valid_objs'[wp]:
+  "cleanReply rptr \<lbrace>valid_objs'\<rbrace>"
+  unfolding cleanReply_def
+  apply (wpsimp wp: updateReply_valid_objs'_preserved
+              simp: valid_reply'_def)
   done
 
 crunches cleanReply, updateReply
@@ -256,24 +260,7 @@ lemma valid_mdb'_lift:
   apply simp
   done
 
-lemma updateReply_valid_objs'_preserved_strong:
-  "\<lbrace>valid_objs' and (\<lambda>s. \<forall>r. valid_reply' r s \<longrightarrow> valid_reply' (upd r) s)\<rbrace>
-   updateReply rptr upd
-   \<lbrace>\<lambda>_. valid_objs'\<rbrace>"
-  unfolding updateReply_def
-  apply wpsimp
-  apply (frule(1) reply_ko_at_valid_objs_valid_reply')
-  apply clarsimp
-  done
-
-lemma updateReply_valid_objs'_preserved:
-  "\<lbrace>valid_objs' and K (\<forall>r s. valid_reply' r s \<longrightarrow> valid_reply' (upd r) s)\<rbrace>
-   updateReply rptr upd
-   \<lbrace>\<lambda>_. valid_objs'\<rbrace>"
-  apply (wpsimp wp: updateReply_valid_objs'_preserved_strong)
-  done
-
-lemma replyUnlink_valid_objs':
+lemma replyUnlink_valid_objs'[wp]:
   "replyUnlink rptr tptr \<lbrace>valid_objs'\<rbrace>"
   unfolding replyUnlink_def getReplyTCB_def
   apply (wpsimp wp: updateReply_valid_objs'_preserved[where upd="replyTCB_update (\<lambda>_. tptrOpt)"
@@ -286,8 +273,8 @@ lemma replyRemoveTCB_valid_pspace'[wp]:
   "replyRemoveTCB tptr \<lbrace>valid_pspace'\<rbrace>"
   unfolding replyRemoveTCB_def valid_pspace'_def cleanReply_def
   supply set_reply'.set_wp[wp del] if_split[split del]
-  apply (wpsimp wp: replyUnlink_valid_objs' valid_mdb'_lift updateReply_valid_objs'_preserved
-                    hoare_vcg_if_lift hoare_vcg_imp_lift gts_wp')
+  apply (wpsimp wp: valid_mdb'_lift updateReply_valid_objs'_preserved hoare_vcg_if_lift
+                    hoare_vcg_imp_lift gts_wp')
   apply (clarsimp simp: valid_reply'_def if_bool_eq_conj if_distribR)
   apply (case_tac "replyPrev ko = None"; clarsimp)
    apply (drule(1) sc_ko_at_valid_objs_valid_sc'
@@ -335,31 +322,29 @@ lemma updateReply_valid_pspace':
   apply (wpsimp wp: updateReply_valid_pspace'_strong)
   done
 
-lemma setReplyTCB_None_iflive':
+lemma setReplyTCB_None_iflive'[wp]:
   "setReplyTCB None rptr \<lbrace>if_live_then_nonz_cap'\<rbrace>"
   unfolding setReplyTCB_def
   apply (wpsimp wp: updateReply_iflive' simp: live_reply'_def)
   done
 
-lemma replyUnlink_iflive':
+lemma replyUnlink_iflive'[wp]:
   "replyUnlink rptr tptr \<lbrace>if_live_then_nonz_cap'\<rbrace>"
   unfolding replyUnlink_def
   apply (wpsimp wp: setReplyTCB_None_iflive' gts_wp' getReplyTCB_wp)
   done
 
-lemma cleanReply_iflive':
+lemma cleanReply_iflive'[wp]:
   "cleanReply rptr \<lbrace>if_live_then_nonz_cap'\<rbrace>"
-  apply (prop_tac "cleanReply rptr = updateReply rptr (replyNext_update (\<lambda>_. None)
-                                                       o replyPrev_update (\<lambda>_. None))")
-   apply (clarsimp simp: cleanReply_def updateReply_def)
+  unfolding cleanReply_def
   apply (wpsimp wp: updateReply_iflive' simp: live_reply'_def)
   done
 
-lemma replyRemoveTCB_iflive':
+lemma replyRemoveTCB_iflive'[wp]:
   "replyRemoveTCB tptr \<lbrace>if_live_then_nonz_cap'\<rbrace>"
   unfolding replyRemoveTCB_def
-  apply (wpsimp wp: hoare_vcg_all_lift replyUnlink_iflive' cleanReply_iflive' updateReply_iflive'
-                    hoare_vcg_if_lift hoare_vcg_imp_lift' gts_wp'
+  apply (wpsimp wp: hoare_vcg_all_lift updateReply_iflive' hoare_vcg_if_lift hoare_vcg_imp_lift'
+                    gts_wp'
          split_del: if_split)
   apply (clarsimp simp: live_reply'_def)
   apply (intro impI conjI allI
@@ -380,11 +365,9 @@ lemma replyRemoveTCB_iflive':
   apply (clarsimp simp: if_live_then_nonz_cap'_def)
   done
 
-lemma cleanReply_valid_pspace':
+lemma cleanReply_valid_pspace'[wp]:
   "cleanReply rptr \<lbrace>valid_pspace'\<rbrace>"
-  apply (prop_tac "cleanReply rptr = updateReply rptr (replyNext_update (\<lambda>_. None)
-                                                       o replyPrev_update (\<lambda>_. None))")
-   apply (clarsimp simp: cleanReply_def updateReply_def)
+  unfolding cleanReply_def
   apply (wpsimp wp: updateReply_valid_pspace' simp: live_reply'_def)
   apply (clarsimp simp: valid_reply'_def)
   done
@@ -532,28 +515,27 @@ lemma replyRemoveTCB_valid_idle':
   apply (clarsimp simp: valid_reply'_def pred_tcb_at'_def)
   apply (intro conjI impI allI
          ; simp?
-         ; normalise_obj_at'?)
-  \<comment>\<open> Weird indentation: around 20 subgoals, almost all of which are trivial/boring facts or
-      contradictions about being a valid SC. \<close>
-  apply (all \<open>(solves \<open>clarsimp simp: valid_idle'_def idle_tcb'_def obj_at'_def isReply_def\<close>)?\<close>)
+         , normalise_obj_at'?
+         , (solves \<open>clarsimp simp: valid_idle'_def idle_tcb'_def obj_at'_def isReply_def\<close>)?)
      apply (frule(1) sc_ko_at_valid_objs_valid_sc'[OF _ valid_pspace_valid_objs']
             , clarsimp simp: valid_sched_context'_def valid_sched_context_size'_def
                              objBits_sc_only_depends_on_scRefills)+
   done
 
-(* FIXME RT: remove; proved by VictorP *)
 lemma replyUnlink_sch_act[wp]:
   "\<lbrace>\<lambda>s. sch_act_wf (ksSchedulerAction s) s \<and> sch_act_not t s\<rbrace>
    replyUnlink r t
    \<lbrace>\<lambda>_ s. sch_act_wf (ksSchedulerAction s) s\<rbrace>"
-  sorry
+  apply (clarsimp simp: replyUnlink_def setReplyTCB_def getReplyTCB_def liftM_def)
+  by (wpsimp wp: sts_sch_act' hoare_drop_imp)
 
-(* FIXME RT: remove; proved by VictorP *)
 lemma replyUnlink_weak_sch_act_wf[wp]:
   "\<lbrace>\<lambda>s. weak_sch_act_wf (ksSchedulerAction s) s \<and> sch_act_not t s\<rbrace>
    replyUnlink r t
    \<lbrace>\<lambda>_ s. weak_sch_act_wf (ksSchedulerAction s) s\<rbrace>"
-  sorry
+  unfolding replyUnlink_def setReplyTCB_def getReplyTCB_def updateReply_def
+  by (wpsimp wp: hoare_vcg_imp_lift hoare_vcg_all_lift gts_wp'
+           simp: weak_sch_act_wf_def)
 
 lemma replyRemoveTCB_sch_act_wf:
   "replyRemoveTCB tptr \<lbrace>\<lambda>s. sch_act_wf (ksSchedulerAction s) s\<rbrace>"
@@ -572,9 +554,9 @@ lemma replyRemoveTCB_sch_act_wf:
 lemma replyRemoveTCB_invs':
   "replyRemoveTCB tptr \<lbrace>invs'\<rbrace>"
   unfolding invs'_def valid_state'_def
-  apply (wpsimp wp: replyRemoveTCB_sym_refs_list_refs_of_replies' replyRemoveTCB_iflive'
-                    replyRemoveTCB_valid_idle' valid_irq_node_lift valid_irq_handlers_lift'
-                    valid_irq_states_lift' irqs_masked_lift replyRemoveTCB_sch_act_wf
+  apply (wpsimp wp: replyRemoveTCB_sym_refs_list_refs_of_replies' replyRemoveTCB_valid_idle'
+                    valid_irq_node_lift valid_irq_handlers_lift' valid_irq_states_lift'
+                    irqs_masked_lift replyRemoveTCB_sch_act_wf
               simp: cteCaps_of_def)
   done
 
