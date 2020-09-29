@@ -16,6 +16,12 @@ defs replyUnlink_assertion_def:
 crunches setReplyTCB
   for pred_tcb_at'[wp]: "\<lambda>s. P (pred_tcb_at' proj test t s)"
   and tcb_at'[wp]: "\<lambda>s. P (tcb_at' t s)"
+  and ksReadyQueues[wp]: "\<lambda>s. P (ksReadyQueues s)"
+  and ksSchedulerAction[wp]: "\<lambda>s. P (ksSchedulerAction s)"
+  and valid_queues[wp]: "valid_queues"
+
+crunches getReplyTCB
+  for inv: "P"
 
 lemma replyUnlink_st_tcb_at':
   "\<lbrace>\<lambda>s. tcb_at' t s \<longrightarrow> (t' = t \<longrightarrow> P (P' Inactive)) \<and> (t' \<noteq> t \<longrightarrow> P (st_tcb_at' P' t' s))\<rbrace>
@@ -94,14 +100,6 @@ lemma replyRemoveTCB_st_tcb_at'_sym_ref:
    apply (wpsimp wp: gts_wp')
   apply (clarsimp simp: obj_at'_def pred_tcb_at'_def)
   done
-
-crunches setReplyTCB
-  for ksReadyQueues[wp]: "\<lambda>s. P (ksReadyQueues s)"
-  and ksSchedulerAction[wp]: "\<lambda>s. P (ksSchedulerAction s)"
-  and valid_queues[wp]: "valid_queues"
-
-crunches getReplyTCB
-  for inv: "P"
 
 lemma setReplyTCB_list_refs_of_replies':
   "setReplyTCB tcb rptr \<lbrace>\<lambda>s. P (list_refs_of_replies' s)\<rbrace>"

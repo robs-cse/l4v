@@ -890,14 +890,6 @@ lemma cancelIPC_invs'[wp]:
   apply (case_tac "tcbState tcb"; clarsimp)
   done
 
-crunch inv[wp]: getBlockingObject P
-
-lemma (in delete_one_conc_pre) cancelIPC_sch_act_simple[wp]:
-  "cancelIPC t \<lbrace>sch_act_simple\<rbrace>"
-  apply (simp add: cancelIPC_def cancelSignal_def Let_def
-             cong: if_cong Structures_H.thread_state.case_cong)
-  by (wpsimp wp: hoare_drop_imps | rule sch_act_simple_lift)+
-
 lemma cancelSignal_st_tcb_at:
   assumes [simp]: "P Inactive" shows
   "\<lbrace>st_tcb_at' P t\<rbrace>
@@ -972,7 +964,7 @@ lemma cancelAllSignals_tcb_at_runnable':
   "\<lbrace>st_tcb_at' runnable' t\<rbrace> cancelAllSignals ntfnptr \<lbrace>\<lambda>_. st_tcb_at' runnable' t\<rbrace>"
   unfolding cancelAllSignals_def
   oops
-  by (wpsimp wp: mapM_x_wp' sts_st_tcb' hoare_drop_imp) *)
+(*by (wpsimp wp: mapM_x_wp' sts_st_tcb' hoare_drop_imp) *)
 
 crunches unbindNotification, bindNotification, unbindMaybeNotification
   for st_tcb_at'[wp]: "st_tcb_at' P p"
