@@ -971,7 +971,7 @@ lemma cancelAllIPC_tcb_at_runnable':
 lemma cancelAllSignals_tcb_at_runnable':
   "\<lbrace>st_tcb_at' runnable' t\<rbrace> cancelAllSignals ntfnptr \<lbrace>\<lambda>_. st_tcb_at' runnable' t\<rbrace>"
   unfolding cancelAllSignals_def
-  sorry (*
+  oops
   by (wpsimp wp: mapM_x_wp' sts_st_tcb' hoare_drop_imp) *)
 
 crunches unbindNotification, bindNotification, unbindMaybeNotification
